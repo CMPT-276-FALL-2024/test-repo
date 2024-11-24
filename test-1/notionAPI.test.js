@@ -1,6 +1,5 @@
-const { fetchTasks, createTask, updateTask, deleteTask } = require('../src/notionAPI');
-const fetch = require('jest-fetch-mock');
-
+import { fetchTasks, createTask, updateTask, deleteTask } from '../src/notionAPI';
+import fetch from 'jest-fetch-mock';
 
 beforeEach(() => {
     fetch.resetMocks();
