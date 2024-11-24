@@ -1,66 +1,127 @@
-import { fetchTasks, createTask, updateTask, deleteTask } from '../src/notionAPI';
-import fetch from 'jest-fetch-mock';
-//hi there
-beforeEach(() => {
-    fetch.resetMocks();
+import { syncGoogleCalendar, syncOutlookCalendar, syncWithCalendar } from '/CalAPI';
+
+// Mock the external libraries for Google and Microsoft
+jest.mock('googleapis', () => ({
+    google: {
+        calendar: jest.fn(() => ({
+            events: {
+                insert: jest.fn().mockImplementation(({ auth, resource }) => {
+                    if (!auth || !resource) throw new Error("Auth or event data missing");
+                    return { data: { id: '123', summary: resource.summary } };
+                })
+            }
+        }))
+    }
+}));
+
+jest.mock('@microsoft/microsoft-graph-client', () => ({
+    Client: {
+        init: jest.fn(() => ({
+            api: jest.fn(() => ({
+                post: jest.fn(async (event) => {
+                    if (!event.subject) throw new Error("Event data is invalid");
+                    return { id: '456', subject: event.subject };
+                })
+            }))
+        }))
+    }
+}));
+
+describe('syncGoogleCalendar', () => {
+    it('should sync task data with Google Calendar successfully', async () => {
+        const taskData = {
+            title: 'Test Event',
+            description: 'Description for test event',
+            startDateTime: '2024-11-08T10:00:00Z',
+            endDateTime: '2024-11-08T11:00:00Z',
+        };
+        const auth = { token: 'valid-auth-token' };
+
+        const result = await syncGoogleCalendar(taskData, auth);
+        expect(result).toHaveProperty('id', '123');
+        expect(result).toHaveProperty('summary', 'Test Event');
+    });
+
+    it('should return an error when auth is missing', async () => {
+        const taskData = {
+            title: 'Test Event',
+            description: 'Description for test event',
+            startDateTime: '2024-11-08T10:00:00Z',
+            endDateTime: '2024-11-08T11:00:00Z',
+        };
+        const auth = null;
+
+        const result = await syncGoogleCalendar(taskData, auth);
+        expect(result).toHaveProperty('error', 'Failed to sync with Google Calendar');
+    });
 });
 
-describe('Notion API functions', () => {
-    const mockDatabaseId = 'mock-database-id';
-    const mockPageId = 'mock-page-id';
-    const mockTaskData = {
-        Name: { title: [{ text: { content: 'Test Task' } }] },
-        StartDate: { date: { start: '2024-01-01' } },
-        EndDate: { date: { start: '2024-01-02' } }
-    };
+describe('syncOutlookCalendar', () => {
+    it('should sync task data with Outlook Calendar successfully', async () => {
+        const taskData = {
+            title: 'Outlook Test Event',
+            description: 'Description for outlook test event',
+            startDateTime: '2024-11-08T10:00:00Z',
+            endDateTime: '2024-11-08T11:00:00Z',
+        };
+        const auth = 'valid-auth-token';
 
-    it('fetches tasks from the Notion database', async () => {
-        fetch.mockResponseOnce(JSON.stringify({ results: [{ id: '1', name: 'Sample Task' }] }));
-
-        const tasks = await fetchTasks(mockDatabaseId);
-        expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/databases/mock-database-id/query'), {
-            method: 'POST',
-            headers: expect.any(Object)
-        });
-        expect(tasks).toEqual([{ id: '1', name: 'Sample Task' }]);
+        const result = await syncOutlookCalendar(taskData, auth);
+        expect(result).toHaveProperty('id', '456');
+        expect(result).toHaveProperty('subject', 'Outlook Test Event');
     });
 
-    it('creates a new task in the Notion database', async () => {
-        fetch.mockResponseOnce(JSON.stringify({ id: 'new-task-id', properties: mockTaskData }));
+    it('should return an error when task data is invalid', async () => {
+        const taskData = {
+            title: '',
+            description: '',
+            startDateTime: '',
+            endDateTime: '',
+        };
+        const auth = 'valid-auth-token';
 
-        const response = await createTask(mockDatabaseId, mockTaskData);
-        expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/pages'), {
-            method: 'POST',
-            headers: expect.any(Object),
-            body: JSON.stringify({
-                parent: { database_id: mockDatabaseId },
-                properties: mockTaskData
-            })
-        });
-        expect(response).toHaveProperty('id', 'new-task-id');
+        const result = await syncOutlookCalendar(taskData, auth);
+        expect(result).toHaveProperty('error', 'Failed to sync with Outlook Calendar');
+    });
+});
+
+describe('syncWithCalendar', () => {
+    it('should call syncGoogleCalendar for "Google" calendar type', async () => {
+        const taskData = {
+            title: 'Google Event',
+            description: 'Testing with Google Calendar',
+            startDateTime: '2024-11-08T10:00:00Z',
+            endDateTime: '2024-11-08T11:00:00Z',
+        };
+        const auth = { token: 'valid-auth-token' };
+
+        const result = await syncWithCalendar(taskData, 'Google', auth);
+        expect(result).toHaveProperty('id', '123');
     });
 
-    it('updates a task in the Notion database', async () => {
-        fetch.mockResponseOnce(JSON.stringify({ id: 'updated-task-id', properties: mockTaskData }));
+    it('should call syncOutlookCalendar for "Outlook" calendar type', async () => {
+        const taskData = {
+            title: 'Outlook Event',
+            description: 'Testing with Outlook Calendar',
+            startDateTime: '2024-11-08T10:00:00Z',
+            endDateTime: '2024-11-08T11:00:00Z',
+        };
+        const auth = 'valid-auth-token';
 
-        const response = await updateTask(mockPageId, mockTaskData);
-        expect(fetch).toHaveBeenCalledWith(expect.stringContaining(`/pages/${mockPageId}`), {
-            method: 'PATCH',
-            headers: expect.any(Object),
-            body: JSON.stringify({ properties: mockTaskData })
-        });
-        expect(response).toHaveProperty('id', 'updated-task-id');
+        const result = await syncWithCalendar(taskData, 'Outlook', auth);
+        expect(result).toHaveProperty('id', '456');
     });
 
-    it('archives a task in the Notion database', async () => {
-        fetch.mockResponseOnce(JSON.stringify({ id: 'archived-task-id', archived: true }));
+    it('should return an error for unsupported calendar types', async () => {
+        const taskData = {
+            title: 'Invalid Event',
+            description: 'This should not sync',
+            startDateTime: '2024-11-08T10:00:00Z',
+            endDateTime: '2024-11-08T11:00:00Z',
+        };
+        const auth = { token: 'valid-auth-token' };
 
-        const response = await deleteTask(mockPageId);
-        expect(fetch).toHaveBeenCalledWith(expect.stringContaining(`/pages/${mockPageId}`), {
-            method: 'PATCH',
-            headers: expect.any(Object),
-            body: JSON.stringify({ archived: true })
-        });
-        expect(response).toHaveProperty('archived', true);
+        const result = await syncWithCalendar(taskData, 'InvalidType', auth);
+        expect(result).toHaveProperty('error', 'Unsupported calendar type');
     });
 });
