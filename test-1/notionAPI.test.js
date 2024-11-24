@@ -1,4 +1,4 @@
-const { fetchTasks, createTask, updateTask, deleteTask } = require('/Users/jeelp/Documents/CMPT_276_Demo/Notion_Tests_Jeel/notionAPI.js');
+const { fetchTasks, createTask, updateTask, deleteTask } = require('../src/notionAPI');
 const fetch = require('jest-fetch-mock');
 
 
