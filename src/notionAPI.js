@@ -2,7 +2,7 @@
 const BASE_URL = 'https://api.notion.com/v1';
 const API_KEY = process.env.NOTION_API_KEY;
 
-// common headers for Notion API requests
+// common headers for ...
 const headers = {
     "Authorization": `Bearer ${API_KEY}`,
     "Content-Type": "application/json",
