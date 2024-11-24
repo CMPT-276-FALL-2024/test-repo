@@ -1,6 +1,6 @@
 import { syncGoogleCalendar, syncOutlookCalendar, syncWithCalendar } from '/CalAPI';
 
-// Mock the external libraries for Google and Microsoft
+// Mock the external libraries for 
 jest.mock('googleapis', () => ({
     google: {
         calendar: jest.fn(() => ({
