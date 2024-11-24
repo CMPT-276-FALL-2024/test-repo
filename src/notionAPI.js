@@ -1,100 +1,85 @@
-// Base URL for Notion API
-const BASE_URL = 'https://api.notion.com/v1';
-const API_KEY = process.env.NOTION_API_KEY;
+// Import necessary modules for each calendar API
+import { google } from 'googleapis';
+import { Client } from '@microsoft/microsoft-graph-client';
 
-// common headers for Notion API requests
-const headers = {
-    "Authorization": `Bearer ${API_KEY}`,
-    "Content-Type": "application/json",
-    "Notion-Version": "2022-06-28" // check version date
+// Google Calendar Setup
+const googleCalendar = google.calendar('v3');
+
+// Outlook Calendar Setup (Microsoft Graph API client setup)
+const getOutlookClient = (auth) => {
+    return Client.init({
+        authProvider: (done) => done(null, auth) // Provide the auth token
+    });
 };
 
 /**
- * Fetch tasks from Notion database.
- * @param {string} databasId - The id of the Notion database to fetch tasks from.
- * @returns {Promise<Array>} - An array of task objects from Notion
+ * Sync a Notion task with Google Calendar.
+ * @param {Object} taskData - Task data to be synced.
+ * @param {Object} auth - Auth object containing Google OAuth tokens.
+ * @returns {Promise<Object>} - Synced Google Calendar event.
  */
-export const fetchTasks = async (databaseId) => {
+export const syncGoogleCalendar = async (taskData, auth) => {
     try {
-        const response = await fetch(`${BASE_URL}/databases/${databaseId}/query`, {
-            method: 'POST',
-            headers: headers
-        });
-        const data = await response.json();
-        return data.results; // Notion API returns results in a 'results' array
-     } catch (error) {
-        console.error("Error fetching tasks: ", error);
-        return { error: "Failed to fetch tasks" }; 
-     }
-};
+        const event = {
+            summary: taskData.title,
+            description: taskData.description,
+            start: { dateTime: taskData.startDateTime, timeZone: 'UTC' },
+            end: { dateTime: taskData.endDateTime, timeZone: 'UTC' },
+        };
 
-/**
- * Create a new task in the Notion database
- * @param {string} databaseId - The ID of the Notion database
- * @param {Object} taskData - Object containing task details to be added
- * @returns {Promise<Object} - Created task object
- */
-export const createTask = async (databaseId, taskData) => {
-    try {
-        const response = await fetch(`${BASE_URL}/pages`, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify({
-                parent: { database_id: databaseId},
-                properties: taskData // Notion properties must match database schema
-            })
+        const response = await googleCalendar.events.insert({
+            auth: auth,
+            calendarId: 'primary',
+            resource: event,
         });
-        const data = await response.json();
-        return data;
+
+        return response.data;
     } catch (error) {
-        console.error("Error creating task: " , error);
-        return { error: "Failed to create task" };
+        console.error("Error syncing with Google Calendar:", error);
+        return { error: "Failed to sync with Google Calendar" };
     }
 };
 
 /**
- *  Update an exisitng task in the Notion database
- * @param {string} pageId - The ID of the page (task) to update.
- * @param {Object} updateData - Object with updated task details
- * @returns {Promise<Object>} - Updated task object.
+ * Sync a Notion task with Outlook Calendar.
+ * @param {Object} taskData - Task data to be synced.
+ * @param {Object} auth - Auth token for Microsoft Graph API.
+ * @returns {Promise<Object>} - Synced Outlook Calendar event.
  */
-export const updateTask = async (pageId, updatedData) => {
+export const syncOutlookCalendar = async (taskData, auth) => {
     try {
-        const reponse = await fetch(`${BASE_URL}/pages/${pageId}`, {
-            method: 'PATCH',
-            headers: headers,
-            body: JSON.stringify({
-                properties: updatedData //update specific properties based on task schema
-            })
-        });
-        const data = await reponse.json();
-        return data;
+        const client = getOutlookClient(auth);
+
+        const event = {
+            subject: taskData.title,
+            body: { contentType: "HTML", content: taskData.description },
+            start: { dateTime: taskData.startDateTime, timeZone: 'UTC' },
+            end: { dateTime: taskData.endDateTime, timeZone: 'UTC' },
+        };
+
+        const response = await client
+            .api('/me/events')
+            .post(event);
+
+        return response;
     } catch (error) {
-        console.error("Error updating task:", error);
-        return { error: "Failed to update task" };
+        console.error("Error syncing with Outlook Calendar:", error);
+        return { error: "Failed to sync with Outlook Calendar" };
     }
 };
 
 /**
- * Delete a task from the Notion database
- * Note: Notion API doesn't directly support deletion, we set a property to
- * "archive" or "completed".
- * @param {string} pageId - the ID of the page (task) to "delete".
- * @returns {Promise<Object>} - Result of deletion (archived task)
+ * Main function to sync a Notion task with the selected calendar.
+ * @param {Object} taskData - Task data to sync.
+ * @param {String} calendarType - Type of calendar ("Google" or "Outlook").
+ * @param {Object} auth - Authentication object for the calendar API.
  */
-export const deleteTask = async (pageId) => {
-    try{
-        const reponse = await fetch(`${BASE_URL}/pages/${pageId}`, {
-            method: 'PATCH',
-            headers: headers,
-            body: JSON.stringify({
-                archived: true // archiving task instead of deleting
-            })
-        });
-        const data = await response.json();
-        return data;
-    } catch (error) {
-        console.error("Error deleting (archiving) task: ", error);
-        return { error: "Failed to delete (archive) task" };
+export const syncWithCalendar = async (taskData, calendarType, auth) => {
+    if (calendarType === 'Google') {
+        return await syncGoogleCalendar(taskData, auth);
+    } else if (calendarType === 'Outlook') {
+        return await syncOutlookCalendar(taskData, auth);
+    } else {
+        return { error: "Unsupported calendar type" };
     }
 };
